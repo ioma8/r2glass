@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v0.1.0)'
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-macos-x86:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Build release binary (x86_64)
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Archive binary
+        run: |
+          cd target/x86_64-apple-darwin/release
+          tar czf r2glass-x86_64-apple-darwin.tar.gz r2glass
+          shasum -a 256 r2glass-x86_64-apple-darwin.tar.gz > r2glass-x86_64-apple-darwin.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r2glass-macos-x86
+          path: |
+            target/x86_64-apple-darwin/release/r2glass-x86_64-apple-darwin.tar.gz
+            target/x86_64-apple-darwin/release/r2glass-x86_64-apple-darwin.tar.gz.sha256
+
+  build-macos-arm:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Build release binary (ARM)
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Archive binary
+        run: |
+          cd target/aarch64-apple-darwin/release
+          tar czf r2glass-aarch64-apple-darwin.tar.gz r2glass
+          shasum -a 256 r2glass-aarch64-apple-darwin.tar.gz > r2glass-aarch64-apple-darwin.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r2glass-macos-arm
+          path: |
+            target/aarch64-apple-darwin/release/r2glass-aarch64-apple-darwin.tar.gz
+            target/aarch64-apple-darwin/release/r2glass-aarch64-apple-darwin.tar.gz.sha256
+
+  create-release:
+    needs: [build-macos-x86, build-macos-arm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: r2glass-macos-x86
+          path: artifacts
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: r2glass-macos-arm
+          path: artifacts
+
+      - name: Generate release notes
+        run: |
+          cat > RELEASE_NOTES.md <<-EOF
+          ## r2glass ${{ inputs.version }}
+
+          **radare2 GUI frontend** — Desktop GUI wrapping radare2 via r2pipe with egui/eframe.
+
+          ### Features
+          - Multi-view output: Disassembly, Hex, Graph, Decompile, Info
+          - Symbol navigation with filterable function/symbol lists
+          - Inspector panel with function context, callers, callees
+          - Debug controls: start, continue, step, breakpoints, registers, backtrace
+          - Background analysis jobs (full, deep, type analysis)
+          - Command console with history and replay
+          - Workspace management
+          - Ctrl/Cmd+click to seek on addresses
+
+          ### Requirements
+          - [radare2](https://github.com/radareorg/radare2) (\`r2\`) must be installed and on your PATH
+
+          ### Installation
+          \`\`\`
+          tar xzf r2glass-*.tar.gz
+          sudo cp r2glass /usr/local/bin/
+          \`\`\`
+          EOF
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: r2glass ${{ inputs.version }}
+          body_path: RELEASE_NOTES.md
+          draft: true
+          prerelease: false
+          files: |
+            artifacts/r2glass-x86_64-apple-darwin.tar.gz
+            artifacts/r2glass-x86_64-apple-darwin.tar.gz.sha256
+            artifacts/r2glass-aarch64-apple-darwin.tar.gz
+            artifacts/r2glass-aarch64-apple-darwin.tar.gz.sha256
